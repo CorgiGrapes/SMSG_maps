@@ -1,0 +1,324 @@
+---
+title: "Plotting maps in R"
+output: html_document
+date: "2023-09-06"
+author: "Thi Hoa Nguyen"
+---
+# Introduction
+This document is a tutorial to plotting maps in R. The first section will look at plotting species' range maps and is broken down into different parts:
+
+- A. Plotting a basic range map that is colour-blind friendly
+- B. Adding arrows to the range map
+- C. Adding coordinates of the specimen localities to the plot
+- D. Putting it altogether 
+
+The second section will look at how to plot a map of Sulawesi's provinces
+
+
+### Installing and loading the required packages
+```{r, message = "FALSE", results='hide'}
+#install.packages('viridis')  
+#install.packages('viridisLite')
+#install.packages('dismo')  
+#install.packages('rworldmap') 
+#install.packages('sf') 
+#install.packages('geodata')
+#install.packages('ggplot2')
+#install.packages('maps')
+#install.packages('rgdal')
+#install.packages("dplyr")
+#install.packages("letsR")
+
+
+library('viridis')  
+library('viridisLite')
+library('dismo')  
+library('rworldmap') 
+library('sf') 
+library('geodata')
+library('ggplot2')
+library('maps')
+library('rgdal')
+library("dplyr")
+library("letsR")
+```
+You can remove the hashtags in front of the install.packages line to install the packages. I have included them in my code to prevent it redownloading packages every time in run the code.
+
+
+# 1. Plotting a species' range map
+This section will look at how to plot the shapefiles of a species and overlay it with a map of Sulawesi. First we need to load the shapefiles into the directory. You can use the function file.choose() to select your shapefile and get its path. 
+
+Specify the file path for the Sulawesi province boundaries shapefile
+```{r, message=FALSE, results='hide'}
+shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/gadm41_IDN_shp/gadm41_IDN_1.shp"
+# Read the province boundaries shapefile
+province_boundaries <- st_read(shapefile_path)
+```
+
+Specify the file path for the species shapefile
+```{r, message=FALSE, results='hide'}
+species_shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/wetransfer_shapefiles_2023-08-15_1348/Bunomys_penitus.shp"
+# Read the species' shapefile
+species_data <- st_read(species_shapefile_path)
+```
+
+### A. Plotting a range map that is colour-blind friendly
+You can change the colours in custom_colours, and you can change the transparency using the alpha() function in geom_sf(). The plot window can be extended to include Sangihe island using the coord_sf() function.
+```{r, message=FALSE, results='hide'}
+# Define presence levels and create a color palette
+presence_levels <- 1:6  # Define all possible presence levels (there are 6 presence codes)
+custom_colors <- c( "#64b15e", "#89CFF7",  "#F0E442", "#D55E00", "#CC79A7", "#D6D6D6")# Define custom colors for each presence code
+
+## Create a named vector for legend labels and colors
+legend_data <- data.frame(PRESENCE = presence_levels, Color = custom_colors)
+names(legend_data$Color) <- as.character(presence_levels)
+species_data$PRESENCE <- factor(match(species_data$PRESENCE, presence_levels),
+                                levels = presence_levels)
+# Making the plot
+ggplot() +
+    geom_sf(data = province_boundaries, aes(fill = "white")) +  # Fill provinces with white color
+    geom_sf(data = species_data, aes(fill = as.character(PRESENCE)), color = NA, alpha=0.8) +  # Fill species' polygons by presence code
+    scale_fill_manual(values = c("white" = "white", setNames(legend_data$Color, legend_data$PRESENCE))) +  
+    coord_sf(xlim = c(118.5, 125.5), ylim = c(-6, 2)) + # Set the coordinates of the plot
+    theme_void() +   # Set transparent background
+    theme(panel.background = element_rect(fill = "#D6F1FF")) +  # Set background color to light blue
+    scale_alpha(guide = "none")+  # Remove the alpha (transparency) legend
+    guides(fill = "none")  # Remove the fill legend
+  
+```
+
+Here we can see that it has plotted the Sulawesi provinces in white, and plotted the shapefiles of Bunomys penitus in green on top.
+
+In some cases, an error is returned when running the line that defines species_data$PRESENCE. This is likely because the shapefile does not have the column 'PRESENCE', but has 'presence' instead. This is the case for Rattus facetus, and to fix this you just have to alter wherever it says 'PRESENCE' for 'presence':
+```{r,message=FALSE, results='hide'}
+species_shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/wetransfer_shapefiles_2023-08-15_1348/Rattus_facetus.shp"
+# Read the species' shapefile
+species_data <- st_read(species_shapefile_path)
+
+# Define presence levels and create a color palette
+presence_levels <- 1:6  # Define all possible presence levels (there are 6 presence codes)
+custom_colors <- c( "#64b15e", "#89CFF7",  "#F0E442", "#D55E00", "#CC79A7", "#D6D6D6")# Define custom colors for each presence code
+
+## Create a named vector for legend labels and colors
+legend_data <- data.frame(presence = presence_levels, Color = custom_colors)
+names(legend_data$Color) <- as.character(presence_levels)
+species_data$presence <- factor(match(species_data$presence, presence_levels),
+                                levels = presence_levels)
+# Making the plot
+ggplot() +
+    geom_sf(data = province_boundaries, aes(fill = "white")) +  # Fill provinces with white color
+    geom_sf(data = species_data, aes(fill = as.character(presence)), color = NA, alpha=0.8) +  # Fill species' polygons by presence code
+    scale_fill_manual(values = c("white" = "white", setNames(legend_data$Color, legend_data$presence))) +  
+    coord_sf(xlim = c(118.5, 125.5), ylim = c(-6, 2)) + # Set the coordinates of the plot
+    theme_void() +   # Set transparent background
+    theme(panel.background = element_rect(fill = "#D6F1FF")) +  # Set background color to light blue
+    scale_alpha(guide = "none")+  # Remove the alpha (transparency) legend
+    guides(fill = "none")  # Remove the fill legend
+  
+```
+
+
+### B. Adding arrows to the plot
+
+To add arrows to plots with small range of extents, such as Bunomys coelestis, we still use the code that defines the presence levels, but we also define a central coordinate of the shapefile and add some functions to ggplot(). The central coordinate, which is defined as centroid, is not always correct so we can manually change the position of the arrow in geom_segment() by adding or minusing x, y, xend, or yend. xend specifies the x positiion of the head of the arrow, whilst yend specifies the y position of the head of the arrow. You can change positions of x and y to define the length of the arrow. 
+
+```{r, message=FALSE, results='hide', warning=FALSE}
+species_shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/wetransfer_shapefiles_2023-08-15_1348/Bunomys_coelestis.shp"
+# Read the species' shapefile
+species_data <- st_read(species_shapefile_path)
+# Define presence levels and create a color palette
+presence_levels <- 1:6  # Define all possible presence levels (there are 6 presence codes)
+custom_colors <- c( "#64b15e", "#89CFF7",  "#F0E442", "#D55E00", "#CC79A7", "#D6D6D6")# Define custom colors for each presence code
+
+## Create a named vector for legend labels and colors
+legend_data <- data.frame(PRESENCE = presence_levels, Color = custom_colors)
+names(legend_data$Color) <- as.character(presence_levels)
+species_data$PRESENCE <- factor(match(species_data$PRESENCE, presence_levels),
+                                levels = presence_levels)
+# Calculate the centroid of the species polygon
+centroid <- st_centroid(species_data)
+# Extract X and Y coordinates from the "geometry" column using regular expressions
+geometry_string <- as.character(centroid$geometry)
+centroid_coords <- as.numeric(unlist(regmatches(geometry_string, gregexpr("\\d+\\.\\d+", geometry_string))))
+# Making the plot
+ggplot() +
+  geom_sf(data = province_boundaries, aes(fill = "white")) +
+  geom_sf(data = species_data, aes(fill = as.character(PRESENCE)), color = NA, alpha=0.8) +
+  geom_segment(aes(x = centroid_coords[1], y = centroid_coords[2]-11.5, xend = centroid_coords[1], yend = centroid_coords[2]-10.82), #edit this line to move the arrow
+               arrow = arrow(type = "closed", length = unit(0.1, "inches")),
+               color = "black", lineend = "round", linejoin = "round") +  # Add arrow segment
+  scale_fill_manual(values = c("white" = "white", setNames(legend_data$Color, legend_data$PRESENCE)), 
+                    name = "Presence Code") +
+  coord_sf(xlim = c(118.5, 125.5), ylim = c(-6, 2)) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "#D6F1FF")) +
+  scale_alpha(guide = "none") +
+  guides(fill = "none")
+
+```
+
+
+### C. Adding specimen localities to the plot
+We can add points to the plot to show where specimens were collected. We do this by creating a data frame containing the coordiinates of the specimen's localities. This is then converted to a spatial points dataset so that it can be plotted onto the map. You can change the shape of the point, e.g., cross, triangle, or circle, by changing 'shape=' in geom_sf. Consult online sources to choose the code for your desired shape. If you want to add the name of the specimen locality, use geom_text() in ggplot. 
+```{r,message=FALSE, results='hide', warning=FALSE}
+#Specify the file path for the species shapefile
+species_shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/wetransfer_shapefiles_2023-08-15_1348/Taeromys_punicans.shp"
+# Read the species' shapefile
+species_data <- st_read(species_shapefile_path)
+# Define presence levels and create a color palette
+presence_levels <- 1:6  # Define all possible presence levels
+custom_colors <- c( "#64b15e", "#89CFF7",  "#F0E442", "#D55E00", "#CC79A7", "#D6D6D6")# Define custom colors for each presence code
+## Create a named vector for legend labels and colors
+legend_data <- data.frame(PRESENCE = presence_levels, Color = custom_colors)
+names(legend_data$Color) <- as.character(presence_levels)
+species_data$PRESENCE <- factor(match(species_data$PRESENCE, presence_levels),
+                                levels = presence_levels)
+# Create a data frame with specimen coordinates
+specimen_localities <- data.frame(
+  name = c("Pinedapa", "Mt. Balease"),
+  lon = c(120.54, 120.54),
+  lat = c(-1.402, -2.4)
+)
+# Convert the data frame to a spatial points dataset
+specimen_localities_sf <- st_as_sf(specimen_localities, coords = c("lon", "lat"), crs = st_crs(province_boundaries))
+# Making the plot
+ggplot() +
+  geom_sf(data = province_boundaries, aes(fill = "white")) +  # Fill provinces with white color
+  geom_sf(data = species_data, aes(fill = as.character(PRESENCE)), color = NA, alpha=0.8) + 
+  geom_sf(data = specimen_localities_sf, color = "black", size = 1.35, shape=16) +  # Plot specimen localities
+  scale_fill_manual(values = c("white" = "white", setNames(legend_data$Color, legend_data$PRESENCE))) +  
+  coord_sf(xlim = c(118.5, 125.5), ylim = c(-6, 2)) + # Set the coordinates of the plot
+  theme_void() +   # Set transparent background
+  theme(panel.background = element_rect(fill = "#D6F1FF")) +  # Set background color to light blue
+  scale_alpha(guide = "none")+  # Remove the alpha (transparency) legend
+  guides(fill = "none")  # Remove the fill legend
+
+```
+
+
+### D. Plotting a map with arrows and specimen localities
+```{r, message=FALSE, results='hide', warning=FALSE}
+#Specify the file path for the species shapefile
+species_shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/wetransfer_shapefiles_2023-08-15_1348/Taeromys_punicans.shp"
+# Read the species' shapefile
+species_data <- st_read(species_shapefile_path)
+# Define presence levels and create a color palette
+presence_levels <- 1:6  # Define all possible presence levels
+custom_colors <- c( "#64b15e", "#89CFF7",  "#F0E442", "#D55E00", "#CC79A7", "#D6D6D6")# Define custom colors for each presence code
+## Create a named vector for legend labels and colors
+legend_data <- data.frame(PRESENCE = presence_levels, Color = custom_colors)
+names(legend_data$Color) <- as.character(presence_levels)
+species_data$PRESENCE <- factor(match(species_data$PRESENCE, presence_levels),
+                                levels = presence_levels)
+
+
+# Calculate the centroid of the species polygon
+centroid <- st_centroid(species_data)
+# Extract X and Y coordinates from the "geometry" column using regular expressions
+geometry_string <- as.character(centroid$geometry)
+centroid_coords <- as.numeric(unlist(regmatches(geometry_string, gregexpr("\\d+\\.\\d+", geometry_string))))
+
+
+# Create a data frame with specimen coordinates
+specimen_localities <- data.frame(
+  name = c("Pinedapa", "Mt. Balease"),
+  lon = c(120.54, 120.54),
+  lat = c(-1.402, -2.4)
+)
+# Convert the data frame to a spatial points dataset
+specimen_localities_sf <- st_as_sf(specimen_localities, coords = c("lon", "lat"), crs = st_crs(province_boundaries))
+
+
+
+# Making the plot
+ggplot() +
+  geom_sf(data = province_boundaries, aes(fill = "white")) +  # Fill provinces with white color
+  geom_sf(data = species_data, aes(fill = as.character(PRESENCE)), color = NA, alpha=0.8) + 
+  geom_sf(data = specimen_localities_sf, color = "black", size = 1.35, shape=16) +  # Plot specimen
+  geom_segment(aes(x = centroid_coords[1], y = centroid_coords[2]-1.8, xend = centroid_coords[1], yend = centroid_coords[2]-2.6), #edit this line to move the arrow
+               arrow = arrow(type = "closed", length = unit(0.1, "inches")),
+               color = "black", lineend = "round", linejoin = "round") +  # Add arrow segment
+  scale_fill_manual(values = c("white" = "white", setNames(legend_data$Color, legend_data$PRESENCE))) +  
+  coord_sf(xlim = c(118.5, 125.5), ylim = c(-6, 2)) + # Set the coordinates of the plot
+  theme_void() +   # Set transparent background
+  theme(panel.background = element_rect(fill = "#D6F1FF")) +  # Set background color to light blue
+  scale_alpha(guide = "none")+  # Remove the alpha (transparency) legend
+  guides(fill = "none")  # Remove the fill legend
+
+```
+
+# 2. Plotting a map of Sulawesi's provinces
+```{r, message= FALSE, results='hide'}
+# Specify the file path for the province boundaries shapefile
+shapefile_path <- "/Users/thihoanguyen/Desktop/year 3/SMSG internship/shapefiles/gadm41_IDN_shp/gadm41_IDN_1.shp"
+# Read the province boundaries shapefile
+province_boundaries <- st_read(shapefile_path)
+
+# Create a data frame with major cities' coordinates
+cities <- data.frame(
+  name = c("Makassar", "Manado", "Palu", "Kendari", "Gorontalo"),
+  lon = c(119.423790, 124.842079, 119.877999, 122.514900, 123.0568),
+  lat = c(-5.135399, 1.474831, -0.900292, -3.972201, 0.5435),
+  nudge_x = c(-1, -0.95, -0.8, 0.9, 0),  # Adjust x-axis nudging for each city name label 
+  nudge_y = c(0.2, 0, 0.1, 0.15, -0.4)  # Adjust y-axis nudging for each city name label
+)
+
+# Convert the data frame to a spatial points dataset
+major_cities_sf <- st_as_sf(cities, coords = c("lon", "lat"), crs = st_crs(province_boundaries))
+
+# List of provinces to include in the plot
+provinces_to_include <- c("Sulawesi Utara", "Gorontalo", "Sulawesi Tengah", "Sulawesi Barat", "Sulawesi Selatan","Sulawesi Tenggara" )
+
+# Filter the province boundaries data to include only the specified provinces
+filtered_province_boundaries <- province_boundaries[province_boundaries$NAME_1 %in% provinces_to_include, ]
+
+
+# Generate a color-blind friendly color palette using viridis
+num_provinces <- length(unique(filtered_province_boundaries$NAME_1))
+province_colors <- viridis(num_provinces)
+
+# Plot the province boundaries and major cities using ggplot2
+ggplot() +
+  geom_sf(data = filtered_province_boundaries, aes(fill = NAME_1)) +  # Color provinces differently
+  geom_sf(data = major_cities_sf, color = "red", size = 3) +  # Plot major cities
+  geom_text(data = cities, aes(label = name, x = lon + nudge_x , y = lat+ nudge_y), size=5) +  # Add city labels
+  ggtitle("Province Boundaries and Major Cities in Sulawesi") +
+  coord_sf(xlim = c(117.5, 125), ylim = c(-6, 2)) + # Zoom into Sulawesi
+  scale_fill_manual(values = province_colors) +  # Set custom province colors
+  labs(fill = NULL) +  # Remove legend title for the color scale
+  theme_void() +  # Set transparent background
+  theme(legend.key.size = unit(0.5, "cm"), 
+  plot.title = element_text(size = 16, face = "bold"))  # Adjust the size of the legend keys
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
